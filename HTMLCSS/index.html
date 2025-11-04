@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ma Liste de Courses</title>
+    <link rel="stylesheet" href="courses.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Ma Liste de Courses Obed GEKO</h1>
+      <div class="forme-section">
+        <h2 id="form-title">Ajouter un article</h2>
+
+        <form id="course-form">
+          <div class="forme-groupe">
+            <label for="nom">Nom de l'article :</label>
+            <input type="text" id="nom" required />
+          </div>
+          <div class="forme-groupe">
+            <label for="quantite">Quantité :</label>
+            <input type="number" id="quantite" value="1" min="1" required />
+          </div>
+          <div class="forme-groupe">
+            <label for="achete">Acheté :</label>
+            <input type="checkbox" id="achete" />
+          </div>
+          <button type="submit" id="submit-btn">Ajouter</button>
+          <button
+            type="button"
+            id="submit-pasdidee"
+            style="background-color: #7600fd"
+          >
+            Afficher / Masquer
+          </button>
+
+          <button
+            type="button"
+            id="cancel-btn"
+            style="display: none; background-color: #ff0000"
+          >
+            Annuler
+          </button>
+        </form>
+      </div>
+
+      <div id="section-courses" style="display: none">
+        <h2>Mes courses :</h2>
+        <ul id="liste-courses" class="liste-courses">
+          <li class="vide-message">Chargement...</li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const API_URL = "/courses";
+
+      let editingId = null;
+      let listeVisible = false;
+
+      document
+        .getElementById("submit-pasdidee")
+        .addEventListener("click", (obed) => {
+          obed.preventDefault();
+          const sectionCourses = document.getElementById("section-courses");
+          if (!listeVisible) {
+            sectionCourses.style.display = "block";
+            chargerListe();
+            listeVisible = true;
+          } else {
+            sectionCourses.style.display = "none";
+            listeVisible = false;
+          }
+        });
+
+      document
+        .getElementById("course-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const nom = document.getElementById("nom").value;
+          const quantite = parseInt(
+            document.getElementById("quantite").value,
+            10
+          );
+
+          // Utiliser une condition explicite (editingId peut valoir 0)
+          if (editingId !== null) {
+            await modifierCourse(editingId, nom, quantite);
+          } else {
+            // Mode ajout
+            await ajouterCourse(nom, quantite);
+          }
+        });
+
+      document.getElementById("cancel-btn").addEventListener("click", () => {
+        resetForm();
+      });
+
+      async function chargerListe() {
+        try {
+          const response = await fetch(API_URL);
+          const courses = await response.json();
+          afficherListe(courses);
+        } catch (error) {
+          console.error("Erreur:", error);
+          document.getElementById("liste-courses").innerHTML =
+            '<li class="vide-message">Erreur de chargement</li>';
+        }
+      }
+
+      function afficherListe(courses) {
+        const liste = document.getElementById("liste-courses");
+
+        if (courses.length === 0) {
+          liste.innerHTML =
+            '<li class="vide-message">Aucun article dans la liste</li>';
+          return;
+        }
+
+        liste.innerHTML = courses
+          .map(
+            (course) => `
+                <li class="ligne-course ${course.achete ? "achete" : ""}">
+                    <input type="checkbox"
+                           ${course.achete ? "checked" : ""}
+                           onchange="(function(chk, id){
+                               const checked = chk.checked;
+                               const li = chk.closest('li');
+                               if(checked) li.classList.add('achete'); else li.classList.remove('achete');
+                               // appeler l'API pour persister
+                               toggleAchete(id, checked);
+                           })(this, ${course.id})">
+                    <div class="info-course">
+                        <div class="nom-course">${course.nom}</div>
+                        <div class="quantite-course">Quantité : ${
+                          course.quantite
+                        }</div>
+                    </div>
+                    <div class="actions-course">
+                        <button type="button" class="edit" onclick="preparerModification(${
+                          course.id
+                        }, ${JSON.stringify(course.nom)}, ${
+              course.quantite
+            })">Modifier</button>
+                        <button type="button" class="delete" onclick="supprimerCourse(${
+                          course.id
+                        })">Supprimer</button>
+                    </div>
+                </li>
+            `
+          )
+          .join("");
+
+        // Délégation d'événements pour Edit / Delete et checkbox
+        // Retirer anciens handlers s'ils existent
+        try {
+          if (liste._clickHandler)
+            liste.removeEventListener("click", liste._clickHandler);
+          if (liste._changeHandler)
+            liste.removeEventListener("change", liste._changeHandler);
+        } catch (e) {
+          /* ignore */
+        }
+
+        // Clicks (Modifier / Supprimer)
+        liste._clickHandler = function (e) {
+          const editBtn = e.target.closest && e.target.closest("button.edit");
+          if (editBtn) {
+            const li = editBtn.closest("li");
+            const id = li.dataset.id;
+            const nom = li.querySelector(".nom-course").textContent.trim();
+            const quantiteText =
+              li.querySelector(".quantite-course").textContent || "";
+            const quantite = parseInt(quantiteText.replace(/\D/g, "")) || 1;
+            preparerModification(id, nom, quantite);
+            return;
+          }
+
+          const delBtn = e.target.closest && e.target.closest("button.delete");
+          if (delBtn) {
+            const li = delBtn.closest("li");
+            const id = li.dataset.id;
+            supprimerCourse(id);
+            return;
+          }
+        };
+        liste.addEventListener("click", liste._clickHandler);
+
+        // Change events (checkbox)
+        liste._changeHandler = function (e) {
+          if (
+            e.target &&
+            e.target.classList &&
+            e.target.classList.contains("chk-achete")
+          ) {
+            const chk = e.target;
+            const li = chk.closest("li");
+            const id = li.dataset.id;
+            const checked = chk.checked;
+            if (checked) li.classList.add("achete");
+            else li.classList.remove("achete");
+            toggleAchete(id, checked);
+          }
+        };
+        liste.addEventListener("change", liste._changeHandler);
+      }
+
+      async function ajouterCourse(nom, quantite) {
+        try {
+          await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nom, quantite, achete: false }),
+          });
+
+          resetForm();
+          chargerListe();
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors de l'ajout");
+        }
+      }
+
+      async function modifierCourse(id, nom, quantite) {
+        try {
+          const response = await fetch(`${API_URL}/${id}`);
+          const course = await response.json();
+
+          await fetch(`${API_URL}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nom, quantite, achete: course.achete }),
+          });
+
+          resetForm();
+          chargerListe();
+        } catch (error) {
+          console.error("Erreur:", error);
+          alert("Erreur lors de la modification");
+        }
+      }
+
+      function preparerModification(id, nom, quantite) {
+        editingId = id;
+        document.getElementById("nom").value = nom;
+        document.getElementById("quantite").value = quantite;
+        document.getElementById("form-title").textContent =
+          "Modifier l'article";
+        document.getElementById("submit-btn").textContent = "Modifier";
+        document.getElementById("cancel-btn").style.display = "inline-block";
+      }
+
+      function resetForm() {
+        editingId = null;
+        document.getElementById("course-form").reset();
+        document.getElementById("form-title").textContent =
+          "Ajouter un article";
+        document.getElementById("submit-btn").textContent = "Ajouter";
+        document.getElementById("cancel-btn").style.display = "none";
+      }
+
+      async function toggleAchete(id, achete) {
+        try {
+          const response = await fetch(`${API_URL}/${id}`);
+          const course = await response.json();
+
+          await fetch(`${API_URL}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...course, achete }),
+          });
+
+          chargerListe();
+        } catch (error) {
+          console.error("Erreur:", error);
+        }
+      }
+
+      async function supprimerCourse(id) {
+        if (confirm("Voulez-vous vraiment supprimer cet article ?")) {
+          try {
+            await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+            chargerListe();
+          } catch (error) {
+            console.error("Erreur:", error);
+            alert("Erreur lors de la suppression");
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
