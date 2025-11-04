@@ -83,13 +83,12 @@
             document.getElementById("quantite").value,
             10
           );
+          const achete = document.getElementById("achete").checked;
 
-          // Utiliser une condition explicite (editingId peut valoir 0)
           if (editingId !== null) {
             await modifierCourse(editingId, nom, quantite);
           } else {
-            // Mode ajout
-            await ajouterCourse(nom, quantite);
+            await ajouterCourse(nom, quantite, achete);
           }
         });
 
@@ -121,16 +120,13 @@
         liste.innerHTML = courses
           .map(
             (course) => `
-                <li class="ligne-course ${course.achete ? "achete" : ""}">
-                    <input type="checkbox"
-                           ${course.achete ? "checked" : ""}
-                           onchange="(function(chk, id){
-                               const checked = chk.checked;
-                               const li = chk.closest('li');
-                               if(checked) li.classList.add('achete'); else li.classList.remove('achete');
-                               // appeler l'API pour persister
-                               toggleAchete(id, checked);
-                           })(this, ${course.id})">
+                <li class="ligne-course ${course.achete ? "achete" : ""}" 
+                    data-id="${course.id}" 
+                    data-nom="${course.nom.replace(/"/g, "&quot;")}" 
+                    data-quantite="${course.quantite}">
+                    <input type="checkbox" 
+                           class="chk-achete"
+                           ${course.achete ? "checked" : ""}>
                     <div class="info-course">
                         <div class="nom-course">${course.nom}</div>
                         <div class="quantite-course">Quantité : ${
@@ -138,41 +134,36 @@
                         }</div>
                     </div>
                     <div class="actions-course">
-                        <button type="button" class="edit" onclick="preparerModification(${
-                          course.id
-                        }, ${JSON.stringify(course.nom)}, ${
-              course.quantite
-            })">Modifier</button>
-                        <button type="button" class="delete" onclick="supprimerCourse(${
-                          course.id
-                        })">Supprimer</button>
+                        <button type="button" class="edit">Modifier</button>
+                        <button type="button" class="delete">Supprimer</button>
                     </div>
                 </li>
             `
           )
           .join("");
 
-        // Délégation d'événements pour Edit / Delete et checkbox
-        // Retirer anciens handlers s'ils existent
-        try {
-          if (liste._clickHandler)
-            liste.removeEventListener("click", liste._clickHandler);
-          if (liste._changeHandler)
-            liste.removeEventListener("change", liste._changeHandler);
-        } catch (e) {
-          /* ignore */
-        }
+        if (liste._clickHandler)
+          liste.removeEventListener("click", liste._clickHandler);
+        if (liste._changeHandler)
+          liste.removeEventListener("change", liste._changeHandler);
 
-        // Clicks (Modifier / Supprimer)
         liste._clickHandler = function (e) {
           const editBtn = e.target.closest && e.target.closest("button.edit");
           if (editBtn) {
             const li = editBtn.closest("li");
-            const id = li.dataset.id;
-            const nom = li.querySelector(".nom-course").textContent.trim();
-            const quantiteText =
-              li.querySelector(".quantite-course").textContent || "";
-            const quantite = parseInt(quantiteText.replace(/\D/g, "")) || 1;
+            console.log("Dataset complet:", li.dataset);
+            const id = Number(li.dataset.id);
+            const nom = li.dataset.nom;
+            const quantite = parseInt(li.dataset.quantite);
+            console.log(
+              "Modification - ID (type: " + typeof id + "):",
+              id,
+              "Nom:",
+              nom,
+              "Quantité:",
+              quantite
+            );
+            console.log("ID valide?", !isNaN(id) && id > 0);
             preparerModification(id, nom, quantite);
             return;
           }
@@ -180,38 +171,38 @@
           const delBtn = e.target.closest && e.target.closest("button.delete");
           if (delBtn) {
             const li = delBtn.closest("li");
-            const id = li.dataset.id;
+            const id = Number(li.dataset.id);
             supprimerCourse(id);
             return;
           }
         };
         liste.addEventListener("click", liste._clickHandler);
 
-        // Change events (checkbox)
         liste._changeHandler = function (e) {
-          if (
-            e.target &&
-            e.target.classList &&
-            e.target.classList.contains("chk-achete")
-          ) {
+          if (e.target && e.target.classList.contains("chk-achete")) {
             const chk = e.target;
             const li = chk.closest("li");
-            const id = li.dataset.id;
+            const id = Number(li.dataset.id);
             const checked = chk.checked;
-            if (checked) li.classList.add("achete");
-            else li.classList.remove("achete");
+
+            if (checked) {
+              li.classList.add("achete");
+            } else {
+              li.classList.remove("achete");
+            }
+
             toggleAchete(id, checked);
           }
         };
         liste.addEventListener("change", liste._changeHandler);
       }
 
-      async function ajouterCourse(nom, quantite) {
+      async function ajouterCourse(nom, quantite, achete) {
         try {
           await fetch(API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nom, quantite, achete: false }),
+            body: JSON.stringify({ nom, quantite, achete: achete || false }),
           });
 
           resetForm();
@@ -222,27 +213,28 @@
         }
       }
 
-      async function modifierCourse(id, nom, quantite) {
+      async function modifierCourse(id, nom, quantite, achete) {
         try {
-          const response = await fetch(`${API_URL}/${id}`);
-          const course = await response.json();
-
-          await fetch(`${API_URL}/${id}`, {
+          const updateResponse = await fetch(`${API_URL}/${id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nom, quantite, achete: course.achete }),
+            body: JSON.stringify({ nom, quantite, achete }),
           });
 
+          if (!updateResponse.ok)
+            throw new Error(`Erreur HTTP: ${updateResponse.status}`);
           resetForm();
           chargerListe();
         } catch (error) {
-          console.error("Erreur:", error);
-          alert("Erreur lors de la modification");
+          console.error("Erreur complète:", error);
+          alert("Erreur lors de la modification: " + error.message);
         }
       }
 
       function preparerModification(id, nom, quantite) {
-        editingId = id;
+        editingId = id !== undefined && id !== null ? Number(id) : null;
+
+        if (Number.isNaN(editingId)) editingId = null;
         document.getElementById("nom").value = nom;
         document.getElementById("quantite").value = quantite;
         document.getElementById("form-title").textContent =
@@ -262,16 +254,15 @@
 
       async function toggleAchete(id, achete) {
         try {
-          const response = await fetch(`${API_URL}/${id}`);
+          const numId = Number(id);
+          const response = await fetch(`${API_URL}/${numId}`);
           const course = await response.json();
 
-          await fetch(`${API_URL}/${id}`, {
+          await fetch(`${API_URL}/${numId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ...course, achete }),
           });
-
-          chargerListe();
         } catch (error) {
           console.error("Erreur:", error);
         }
