@@ -3,75 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ma Liste de Courses</title>
+    <title>Liste de Courses</title>
     <link rel="stylesheet" href="courses.css" />
   </head>
   <body>
     <div class="container">
-      <h1>Ma Liste de Courses Obed GEKO</h1>
+      <h1>Ma Liste de Courses</h1>
+
       <div class="forme-section">
         <h2 id="form-title">Ajouter un article</h2>
-
         <form id="course-form">
           <div class="forme-groupe">
-            <label for="nom">Nom de l'article :</label>
+            <label for="nom">Nom de l'article</label>
             <input type="text" id="nom" required />
           </div>
           <div class="forme-groupe">
-            <label for="quantite">Quantité :</label>
-            <input type="number" id="quantite" value="1" min="1" required />
-          </div>
-          <div class="forme-groupe">
-            <label for="achete">Acheté :</label>
-            <input type="checkbox" id="achete" />
+            <label for="quantite">Quantité</label>
+            <input type="number" id="quantite" min="1" value="1" required />
           </div>
           <button type="submit" id="submit-btn">Ajouter</button>
-          <button
-            type="button"
-            id="submit-pasdidee"
-            style="background-color: #7600fd"
-          >
-            Afficher / Masquer
-          </button>
-
-          <button
-            type="button"
-            id="cancel-btn"
-            style="display: none; background-color: #ff0000"
-          >
+          <button type="button" id="cancel-btn" style="display: none">
             Annuler
           </button>
         </form>
       </div>
 
-      <div id="section-courses" style="display: none">
-        <h2>Mes courses :</h2>
-        <ul id="liste-courses" class="liste-courses">
-          <li class="vide-message">Chargement...</li>
-        </ul>
-      </div>
+      <ul id="liste-courses" class="liste-courses"></ul>
     </div>
 
     <script>
       const API_URL = "/courses";
-
       let editingId = null;
-      let listeVisible = false;
 
-      document
-        .getElementById("submit-pasdidee")
-        .addEventListener("click", (obed) => {
-          obed.preventDefault();
-          const sectionCourses = document.getElementById("section-courses");
-          if (!listeVisible) {
-            sectionCourses.style.display = "block";
-            chargerListe();
-            listeVisible = true;
-          } else {
-            sectionCourses.style.display = "none";
-            listeVisible = false;
-          }
-        });
+      chargerListe();
 
       document
         .getElementById("course-form")
@@ -83,12 +47,11 @@
             document.getElementById("quantite").value,
             10
           );
-          const achete = document.getElementById("achete").checked;
 
           if (editingId !== null) {
             await modifierCourse(editingId, nom, quantite);
           } else {
-            await ajouterCourse(nom, quantite, achete);
+            await ajouterCourse(nom, quantite);
           }
         });
 
@@ -120,13 +83,10 @@
         liste.innerHTML = courses
           .map(
             (course) => `
-                <li class="ligne-course ${course.achete ? "achete" : ""}" 
+                <li class="ligne-course" 
                     data-id="${course.id}" 
                     data-nom="${course.nom.replace(/"/g, "&quot;")}" 
                     data-quantite="${course.quantite}">
-                    <input type="checkbox" 
-                           class="chk-achete"
-                           ${course.achete ? "checked" : ""}>
                     <div class="info-course">
                         <div class="nom-course">${course.nom}</div>
                         <div class="quantite-course">Quantité : ${
@@ -144,26 +104,14 @@
 
         if (liste._clickHandler)
           liste.removeEventListener("click", liste._clickHandler);
-        if (liste._changeHandler)
-          liste.removeEventListener("change", liste._changeHandler);
 
         liste._clickHandler = function (e) {
           const editBtn = e.target.closest && e.target.closest("button.edit");
           if (editBtn) {
             const li = editBtn.closest("li");
-            console.log("Dataset complet:", li.dataset);
             const id = Number(li.dataset.id);
             const nom = li.dataset.nom;
             const quantite = parseInt(li.dataset.quantite);
-            console.log(
-              "Modification - ID (type: " + typeof id + "):",
-              id,
-              "Nom:",
-              nom,
-              "Quantité:",
-              quantite
-            );
-            console.log("ID valide?", !isNaN(id) && id > 0);
             preparerModification(id, nom, quantite);
             return;
           }
@@ -177,32 +125,14 @@
           }
         };
         liste.addEventListener("click", liste._clickHandler);
-
-        liste._changeHandler = function (e) {
-          if (e.target && e.target.classList.contains("chk-achete")) {
-            const chk = e.target;
-            const li = chk.closest("li");
-            const id = Number(li.dataset.id);
-            const checked = chk.checked;
-
-            if (checked) {
-              li.classList.add("achete");
-            } else {
-              li.classList.remove("achete");
-            }
-
-            toggleAchete(id, checked);
-          }
-        };
-        liste.addEventListener("change", liste._changeHandler);
       }
 
-      async function ajouterCourse(nom, quantite, achete) {
+      async function ajouterCourse(nom, quantite) {
         try {
           await fetch(API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nom, quantite, achete: achete || false }),
+            body: JSON.stringify({ nom, quantite }),
           });
 
           resetForm();
@@ -213,12 +143,12 @@
         }
       }
 
-      async function modifierCourse(id, nom, quantite, achete) {
+      async function modifierCourse(id, nom, quantite) {
         try {
           const updateResponse = await fetch(`${API_URL}/${id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nom, quantite, achete }),
+            body: JSON.stringify({ nom, quantite }),
           });
 
           if (!updateResponse.ok)
@@ -250,22 +180,6 @@
           "Ajouter un article";
         document.getElementById("submit-btn").textContent = "Ajouter";
         document.getElementById("cancel-btn").style.display = "none";
-      }
-
-      async function toggleAchete(id, achete) {
-        try {
-          const numId = Number(id);
-          const response = await fetch(`${API_URL}/${numId}`);
-          const course = await response.json();
-
-          await fetch(`${API_URL}/${numId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...course, achete }),
-          });
-        } catch (error) {
-          console.error("Erreur:", error);
-        }
       }
 
       async function supprimerCourse(id) {
